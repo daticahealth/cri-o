@@ -97,13 +97,13 @@ func (cc *certConfigCache) getConfig(hello *tls.ClientHelloInfo) (*tls.Config, e
 	var config *tls.Config
 	cert, err := tls.LoadX509KeyPair(cc.tlsCert, cc.tlsKey)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("bad tls certs: %s %s: %v", cc.tlsCert, cc.tlsKey, err)
 	}
 	config.Certificates = []tls.Certificate{cert}
 	if len(cc.tlsCA) > 0 {
 		caBytes, err := ioutil.ReadFile(cc.tlsCA)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("bad ca cert(s): %s: %v", cc.tlsCA, err)
 		}
 		certPool := x509.NewCertPool()
 		certPool.AppendCertsFromPEM(caBytes)
