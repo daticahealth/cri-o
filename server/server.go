@@ -88,22 +88,22 @@ type certConfigCache struct {
 	tlsCA   string
 }
 
-// getConfig gets the tlsConfig for the streaming server.
+// GetConfigForClient gets the tlsConfig for the streaming server.
 // This allows the certs to be swapped, without shutting down crio.
-func (cc *certConfigCache) getConfig(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+func (cc *certConfigCache) GetConfigForClient(hello *tls.ClientHelloInfo) (*tls.Config, error) {
 	if cc.config != nil && time.Now().Before(cc.expires) {
 		return cc.config, nil
 	}
 	config := new(tls.Config)
 	cert, err := tls.LoadX509KeyPair(cc.tlsCert, cc.tlsKey)
 	if err != nil {
-		return nil, fmt.Errorf("bad tls certs: %s %s: %v", cc.tlsCert, cc.tlsKey, err)
+		return nil, err
 	}
 	config.Certificates = []tls.Certificate{cert}
 	if len(cc.tlsCA) > 0 {
 		caBytes, err := ioutil.ReadFile(cc.tlsCA)
 		if err != nil {
-			return nil, fmt.Errorf("bad ca cert(s): %s: %v", cc.tlsCA, err)
+			return nil, err
 		}
 		certPool := x509.NewCertPool()
 		certPool.AppendCertsFromPEM(caBytes)
@@ -301,18 +301,20 @@ func New(config *Config) (*Server, error) {
 	streamServerConfig := streaming.DefaultConfig
 	streamServerConfig.Addr = net.JoinHostPort(bindAddress.String(), config.StreamPort)
 	if config.TLSStreaming {
-		// certCache = &certConfigCache{
-		// 	tlsCert: config.TLSCert,
-		// 	tlsKey:  config.TLSKey,
-		// 	tlsCA:   config.TLSCA,
-		// }
+		certCache = &certConfigCache{
+			tlsCert: config.TLSCert,
+			tlsKey:  config.TLSKey,
+			tlsCA:   config.TLSCA,
+		}
+		// we need to do this, because the http package method "ServeTLS" requires
+		// a certificate or it throws an error.
 		cert, err := tls.LoadX509KeyPair(config.TLSCert, config.TLSKey)
 		if err != nil {
 			return nil, err
 		}
 		streamServerConfig.TLSConfig = &tls.Config{
+			GetConfigForClient: certCache.GetConfigForClient,
 			Certificates:       []tls.Certificate{cert},
-			InsecureSkipVerify: true,
 		}
 	}
 	s.stream.runtimeServer = s
