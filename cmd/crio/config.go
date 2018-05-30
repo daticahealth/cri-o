@@ -40,6 +40,19 @@ stream_address = "{{ .StreamAddress }}"
 # stream_port is the port on which the stream server will listen
 stream_port = "{{ .StreamPort }}"
 
+# tls_streaming enables encrypted tls transport of the stream server
+tls_streaming = {{ .TLSStreaming }}
+
+# tls_cert is the x509 certificate file path used to serve the encrypted stream
+tls_cert = "{{ .TLSCert }}"
+
+# tls_key is the key file path used to serve the encrypted stream
+tls_key = "{{ .TLSKey }}"
+
+# tls_ca is the x509 CA(s) file used to verify and authenticate client 
+$ communication with the tls encrypted stream
+tls_ca = "{{ .TLSCA }}"
+
 # file_locking is whether file-based locking will be used instead of
 # in-memory locking
 file_locking = {{ .FileLocking }}

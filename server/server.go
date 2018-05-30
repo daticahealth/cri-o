@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -12,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cri-o/ocicni/pkg/ocicni"
 	"github.com/fsnotify/fsnotify"
@@ -36,7 +39,12 @@ import (
 )
 
 const (
-	shutdownFile = "/var/lib/crio/crio.shutdown"
+	shutdownFile        = "/var/lib/crio/crio.shutdown"
+	certRefreshInterval = time.Minute * 5
+)
+
+var (
+	certCache *certConfigCache
 )
 
 func isTrue(annotaton string) bool {
@@ -69,6 +77,47 @@ type Server struct {
 	bindAddress     string
 	stream          streamService
 	exitMonitorChan chan struct{}
+}
+
+type certConfigCache struct {
+	config  *tls.Config
+	expires time.Time
+
+	tlsCert string
+	tlsKey  string
+	tlsCA   string
+}
+
+// getConfig gets the tlsConfig for the streaming server.
+// This allows the certs to be swapped, without shutting down crio.
+func (cc *certConfigCache) getConfig(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+	if cc.config != nil && time.Now().Before(cc.expires) {
+		return cc.config, nil
+	}
+	var config *tls.Config
+	cert, err := tls.LoadX509KeyPair(cc.tlsCert, cc.tlsKey)
+	if err != nil {
+		return nil, err
+	}
+	config.Certificates = []tls.Certificate{cert}
+	if len(cc.tlsCA) > 0 {
+		f, err := os.Open(cc.tlsCA)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		caBytes, err := ioutil.ReadAll(f)
+		if err != nil {
+			return nil, err
+		}
+		certPool := x509.NewCertPool()
+		certPool.AppendCertsFromPEM(caBytes)
+		config.RootCAs = certPool
+		config.ClientAuth = tls.RequireAndVerifyClientCert
+	}
+	cc.config = config
+	cc.expires = time.Now().Add(certRefreshInterval)
+	return config, nil
 }
 
 // StopStreamServer stops the stream server
@@ -256,6 +305,16 @@ func New(config *Config) (*Server, error) {
 	// Prepare streaming server
 	streamServerConfig := streaming.DefaultConfig
 	streamServerConfig.Addr = net.JoinHostPort(bindAddress.String(), config.StreamPort)
+	if config.TLSStreaming {
+		certCache := &certConfigCache{
+			tlsCert: config.TLSCert,
+			tlsKey:  config.TLSKey,
+			tlsCA:   config.TLSCA,
+		}
+		streamServerConfig.TLSConfig = &tls.Config{
+			GetConfigForClient: certCache.getConfig,
+		}
+	}
 	s.stream.runtimeServer = s
 	s.stream.streamServer, err = streaming.NewServer(streamServerConfig, s.stream)
 	if err != nil {
