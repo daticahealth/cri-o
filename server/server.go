@@ -94,7 +94,7 @@ func (cc *certConfigCache) getConfig(hello *tls.ClientHelloInfo) (*tls.Config, e
 	if cc.config != nil && time.Now().Before(cc.expires) {
 		return cc.config, nil
 	}
-	var config *tls.Config
+	config := new(tls.Config)
 	cert, err := tls.LoadX509KeyPair(cc.tlsCert, cc.tlsKey)
 	if err != nil {
 		return nil, fmt.Errorf("bad tls certs: %s %s: %v", cc.tlsCert, cc.tlsKey, err)
@@ -112,7 +112,7 @@ func (cc *certConfigCache) getConfig(hello *tls.ClientHelloInfo) (*tls.Config, e
 	}
 	cc.config = config
 	cc.expires = time.Now().Add(certRefreshInterval)
-	return config, nil
+	return cc.config, nil
 }
 
 // StopStreamServer stops the stream server
@@ -301,13 +301,18 @@ func New(config *Config) (*Server, error) {
 	streamServerConfig := streaming.DefaultConfig
 	streamServerConfig.Addr = net.JoinHostPort(bindAddress.String(), config.StreamPort)
 	if config.TLSStreaming {
-		certCache = &certConfigCache{
-			tlsCert: config.TLSCert,
-			tlsKey:  config.TLSKey,
-			tlsCA:   config.TLSCA,
+		// certCache = &certConfigCache{
+		// 	tlsCert: config.TLSCert,
+		// 	tlsKey:  config.TLSKey,
+		// 	tlsCA:   config.TLSCA,
+		// }
+		cert, err := tls.LoadX509KeyPair(config.TLSCert, config.TLSKey)
+		if err != nil {
+			return nil, err
 		}
 		streamServerConfig.TLSConfig = &tls.Config{
-			GetConfigForClient: certCache.getConfig,
+			Certificates:       []tls.Certificate{cert},
+			InsecureSkipVerify: true,
 		}
 	}
 	s.stream.runtimeServer = s
