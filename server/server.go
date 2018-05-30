@@ -101,12 +101,7 @@ func (cc *certConfigCache) getConfig(hello *tls.ClientHelloInfo) (*tls.Config, e
 	}
 	config.Certificates = []tls.Certificate{cert}
 	if len(cc.tlsCA) > 0 {
-		f, err := os.Open(cc.tlsCA)
-		if err != nil {
-			return nil, err
-		}
-		defer f.Close()
-		caBytes, err := ioutil.ReadAll(f)
+		caBytes, err := ioutil.ReadFile(cc.tlsCA)
 		if err != nil {
 			return nil, err
 		}
@@ -306,7 +301,7 @@ func New(config *Config) (*Server, error) {
 	streamServerConfig := streaming.DefaultConfig
 	streamServerConfig.Addr = net.JoinHostPort(bindAddress.String(), config.StreamPort)
 	if config.TLSStreaming {
-		certCache := &certConfigCache{
+		certCache = &certConfigCache{
 			tlsCert: config.TLSCert,
 			tlsKey:  config.TLSKey,
 			tlsCA:   config.TLSCA,
